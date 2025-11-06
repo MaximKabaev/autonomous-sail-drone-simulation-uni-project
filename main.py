@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 
 def simulate(s0):
-    [t,s] = ode.solve_ivp(0,30,0.1,s0) 
+    [t,s] = ode.solve_ivp(0,60,0.05,s0)
 
     plt.figure()
     plt.plot(s[0,:], s[1,:], label='Trajectory')
@@ -14,6 +14,7 @@ def simulate(s0):
     plt.legend()
     plt.grid()
     plt.show()
+    print('Last state: ' + str(s[:, -1]))
 
 
 if __name__ == '__main__':
@@ -26,5 +27,13 @@ if __name__ == '__main__':
                 [0.0],
                 [2.9],
                 [0.0]])
+
+    # s0 = np.array([
+    #             [3.19382608],
+    #             [1.73610746e+02],
+    #             [1.51902967],
+    #             [1.29768089e-01],
+    #             [2.85967604],
+    #             [-9.03440094e-04]])
     
     simulate(s0)

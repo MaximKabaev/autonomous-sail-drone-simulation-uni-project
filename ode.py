@@ -77,7 +77,6 @@ def state_deriv_drone(t,s):
         heading in radians, x-velocity in m/s, y-velocity in m/s and turn rate in rad/s.
     """
 
-
     M = 2500  # Mass of the saildrone in kg
     I = 10000  # Moment of inertia of the saildrone in kg*m^2
     rho = 1.225  # Density of air in kg/m^3
@@ -92,17 +91,18 @@ def state_deriv_drone(t,s):
     v_apparent_wind = v_wind - np.array([s[3], s[4]])
     aparent_wind_angle = np.arctan2(v_apparent_wind[1], v_apparent_wind[0])
 
-    s_dot = [s[3],                     # dx/dt = vx
-             s[4],                     # dy/dt = vy
-             s[5],                     # dtheta/dt = omega
-             0,                        # dvx/dt
-             0,                        # dvy/dt
-             0]                        # domega/dt
+    s_dot = np.zeros(6)
+    s_dot[0] = s[3]                     # dx/dt = vx
+    s_dot[1] = s[4]                     # dy/dt = vy
+    s_dot[2] = s[5]                     # dtheta/dt = omega
+    
+    # s_dot[3], s_dot[4], s_dot[5] will be computed below
 
     force_hydro, torque_hydro = saildrone_hydro.get_vals(
         np.array([s[3], s[4]]), s[2], s[5], rudder_angle)
 
-    attack_angle = s[2] + sail_angle - aparent_wind_angle
+    attack_angle = -(s[2] + sail_angle) + aparent_wind_angle
+    attack_angle = np.arctan2(np.sin(attack_angle), np.cos(attack_angle))
     
     c_d = 1 - np.cos(2*(attack_angle))
     c_l = 1.5*np.sin(2*(attack_angle) + 0.5 * np.sin(2*(attack_angle)))
@@ -115,9 +115,9 @@ def state_deriv_drone(t,s):
     
     s_dot[3] = 1/M * (F_d_x + F_l_x + force_hydro[0])
     s_dot[4] = 1/M * (F_d_y + F_l_y + force_hydro[1])
-    s_dot[5] = 1/I * (torque_hydro + (0.1 * np.cos(s[2])*(F_d_y + F_l_y) - 0.1 * np.sin(s[2])*(F_d_x + F_l_x)))
+    s_dot[5] = 1/I * (torque_hydro + (-0.1*np.cos(s[2])*(F_d_y + F_l_y) + 0.1*np.sin(s[2])*(F_d_x + F_l_x)))
 
-    return np.array(s_dot)
+    return s_dot
 
 
 def runge_kutta4_step(t,dt,s):

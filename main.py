@@ -20,7 +20,11 @@ if __name__ == '__main__':
         ode.course_parameters(65, 100, -22.5, 0)
     ]
 
+    # course_params_list = [
+    #     ode.course_parameters(0, 60, -45, 0),
+    # ]
+
     # Create the saildrone object
     saildrone = ode.saildrone(course_params_list=course_params_list)
 
-    saildrone.simulate_course(0, 100, 0.05, s0)
+    saildrone.simulate_course(0, 100, 0.1, s0)

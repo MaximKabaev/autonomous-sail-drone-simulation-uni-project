@@ -176,7 +176,7 @@ class saildrone:
         F_l = 0.5 * rho * A_sail * np.linalg.norm(v_apparent_wind)**2 * c_l
         F_d_x = F_d * np.cos(aparent_wind_angle)
         F_d_y = F_d * np.sin(aparent_wind_angle)
-        F_l_x = F_l * np.cos(aparent_wind_angle + np.pi/2)
+        F_l_x = F_l * -np.cos(aparent_wind_angle + np.pi/2)
         F_l_y = F_l * np.sin(aparent_wind_angle + np.pi/2)
         
         s_dot[3] = 1/M * (F_d_x + F_l_x + force_hydro[0])

@@ -25,7 +25,7 @@ if __name__ == '__main__':
     controller = ode.AutonomousController(
         waypoints=waypoints,
         wind=(-6.7, 0),  # Use actual wind vector
-        Kp_rudder=1,  # Higher gain for stability (tune this value)
+        Kp_rudder=0.5,  # Higher gain for stability (tune this value)
         lookahead_distance=5
     )
     

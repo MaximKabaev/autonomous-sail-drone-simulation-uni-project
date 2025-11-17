@@ -477,7 +477,6 @@ class saildrone:
         plt.legend(fontsize=9, loc='best')
         plt.grid(True, alpha=0.3)
         plt.axis('equal')
-        plt.show()
 
         # Plot 2: Heading Error Over Time
         if self.controller and hasattr(self.controller, 'control_history'):
@@ -498,8 +497,7 @@ class saildrone:
             plt.title('Heading Error Over Time', fontsize=14)
             plt.grid(True, alpha=0.3)
             plt.axhline(y=0, color='k', linestyle='--', alpha=0.3)
-            plt.show()
-            
+
             # Plot 3: Control Angles Over Time
             plt.figure(figsize=(10, 8))
             
@@ -544,6 +542,8 @@ class saildrone:
             plt.grid(True, alpha=0.3)
             
             plt.tight_layout()
-            plt.show()
+
+        # Show all plots at once
+        plt.show()
 
         return t, s

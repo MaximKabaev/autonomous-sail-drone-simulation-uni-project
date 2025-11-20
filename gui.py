@@ -23,7 +23,7 @@ class SailDroneGUI:
         self.waypoints = []
 
         # Controller parameters
-        self.kp_rudder = 0.5
+        self.kp_rudder = 0.133
         self.lookahead_distance = 1.0
 
         # Axis limits for zoom

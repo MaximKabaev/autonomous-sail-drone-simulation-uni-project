@@ -350,7 +350,7 @@ class saildrone:
 
 
 
-    def simulate_course(self, t0, dt, s0):
+    def simulate_course(self, t0, dt, s0, plot=True):
         """
         Simulate the saildrone trajectory with a sequence of course parameters.
         
@@ -394,156 +394,157 @@ class saildrone:
             s = np.append(s, snext, axis=1)
             n += 1
 
-        # Plot trajectory
-        plt.figure(figsize=(12, 8))
-        
-        # Plot based on control mode
-        if self.controller is not None:
-            # Autonomous mode: plot trajectory and waypoints
-            plt.plot(s[0, :], s[1, :], 'b-', linewidth=2, label='Drone Path')
+        if plot:
+            # Plot trajectory
+            plt.figure(figsize=(12, 8))
             
-            # Plot waypoints
-            waypoints = np.array(self.controller.waypoints)
-            plt.plot(waypoints[:, 0], waypoints[:, 1], 'r*', markersize=15, 
-                    label='Waypoints', zorder=5)
-            
-            # Connect waypoints with dashed lines
-            plt.plot(waypoints[:, 0], waypoints[:, 1], 'r--', alpha=0.3, linewidth=1)
-            
-            # Number the waypoints and show reach times
-            for i, wp in enumerate(waypoints):
-                if i < len(self.controller.waypoint_reach_times):
-                    reach_time = self.controller.waypoint_reach_times[i]
-                    label = f'WP{i+1}\nt={reach_time:.1f}s'
-                else:
-                    label = f'WP{i+1}'
-                plt.annotate(label, xy=(wp[0], wp[1]), 
-                           xytext=(5, 5), textcoords='offset points',
-                           fontsize=10, color='red')
-        else:
-            # Manual mode: plot with different colors for each course segment
-            colors = plt.cm.jet(np.linspace(0, 1, len(self.course_params_list)))
-            
-            for i, params in enumerate(self.course_params_list):
-                segment_mask = (t >= params.start_time) & (t <= params.end_time)
-                segment_indices = np.where(segment_mask)[0]
+            # Plot based on control mode
+            if self.controller is not None:
+                # Autonomous mode: plot trajectory and waypoints
+                plt.plot(s[0, :], s[1, :], 'b-', linewidth=2, label='Drone Path')
                 
-                if len(segment_indices) > 0:
-                    label = f't={params.start_time:.0f}-{params.end_time:.0f}s (sail={np.rad2deg(params.sail_angle_rad):.1f}°, rudder={np.rad2deg(params.rudder_angle_rad):.1f}°)'
-                    plt.plot(s[0, segment_indices], s[1, segment_indices], 
-                            color=colors[i], linewidth=2, label=label)
-        
-        # Mark start and end points
-        plt.plot(s[0, 0], s[1, 0], 'go', markersize=12, label='Start', zorder=5)
-        plt.plot(s[0, -1], s[1, -1], 'ro', markersize=12, label='End', zorder=5)
-        
-        # Plot wind direction arrow
-        if self.controller is not None:
-            wind_vector = self.controller.wind
-        else:
-            wind_vector = np.array([-self.wind_speed, 0])  # Default wind blowing west
-        
-        # Position arrow in bottom-right corner of plot
-        x_range = s[0, :].max() - s[0, :].min()
-        y_range = s[1, :].max() - s[1, :].min()
-        x_min, x_max = s[0, :].min(), s[0, :].max()
-        y_min, y_max = s[1, :].min(), s[1, :].max()
-        
-        arrow_x = x_max - 0.15 * x_range
-        arrow_y = y_min + 0.15 * y_range
-        arrow_length = 0.1 * max(x_range, y_range)
-        
-        # Normalize wind vector and scale to arrow length
-        wind_magnitude = np.linalg.norm(wind_vector)
-        if wind_magnitude > 0:
-            wind_dx = arrow_length * wind_vector[0] / wind_magnitude
-            wind_dy = arrow_length * wind_vector[1] / wind_magnitude
-        else:
-            wind_dx, wind_dy = 0, 0
-        
-        # Draw arrow showing where wind is BLOWING TO
-        plt.arrow(arrow_x, arrow_y, wind_dx, wind_dy, 
-                 head_width=arrow_length*0.3, head_length=arrow_length*0.25,
-                 fc='cyan', ec='blue', linewidth=2, label='Wind Direction', zorder=10)
-        
-        # Add wind vector text
-        plt.text(arrow_x, arrow_y - 0.05 * y_range, 
-                f'Wind: ({wind_vector[0]:.1f}, {wind_vector[1]:.1f}) m/s',
-                fontsize=10, color='blue', ha='center', weight='bold')
-        
-        plt.xlabel('X Position (m)', fontsize=12)
-        plt.ylabel('Y Position (m)', fontsize=12)
-        plt.title('Saildrone Trajectory', fontsize=14)
-        plt.legend(fontsize=9, loc='best')
-        plt.grid(True, alpha=0.3)
-        plt.axis('equal')
-
-        # Plot 2: Heading Error Over Time
-        if self.controller and hasattr(self.controller, 'control_history'):
-            history = self.controller.control_history
-            actual_tmax = t[-1]
-            time_steps = np.linspace(0, actual_tmax, len(history['heading_error']))
+                # Plot waypoints
+                waypoints = np.array(self.controller.waypoints)
+                plt.plot(waypoints[:, 0], waypoints[:, 1], 'r*', markersize=15, 
+                        label='Waypoints', zorder=5)
+                
+                # Connect waypoints with dashed lines
+                plt.plot(waypoints[:, 0], waypoints[:, 1], 'r--', alpha=0.3, linewidth=1)
+                
+                # Number the waypoints and show reach times
+                for i, wp in enumerate(waypoints):
+                    if i < len(self.controller.waypoint_reach_times):
+                        reach_time = self.controller.waypoint_reach_times[i]
+                        label = f'WP{i+1}\nt={reach_time:.1f}s'
+                    else:
+                        label = f'WP{i+1}'
+                    plt.annotate(label, xy=(wp[0], wp[1]), 
+                            xytext=(5, 5), textcoords='offset points',
+                            fontsize=10, color='red')
+            else:
+                # Manual mode: plot with different colors for each course segment
+                colors = plt.cm.jet(np.linspace(0, 1, len(self.course_params_list)))
+                
+                for i, params in enumerate(self.course_params_list):
+                    segment_mask = (t >= params.start_time) & (t <= params.end_time)
+                    segment_indices = np.where(segment_mask)[0]
+                    
+                    if len(segment_indices) > 0:
+                        label = f't={params.start_time:.0f}-{params.end_time:.0f}s (sail={np.rad2deg(params.sail_angle_rad):.1f}°, rudder={np.rad2deg(params.rudder_angle_rad):.1f}°)'
+                        plt.plot(s[0, segment_indices], s[1, segment_indices], 
+                                color=colors[i], linewidth=2, label=label)
             
-            plt.figure(figsize=(10, 5))
-            plt.plot(time_steps, np.rad2deg(history['heading_error']), 'b-', linewidth=2)
+            # Mark start and end points
+            plt.plot(s[0, 0], s[1, 0], 'go', markersize=12, label='Start', zorder=5)
+            plt.plot(s[0, -1], s[1, -1], 'ro', markersize=12, label='End', zorder=5)
             
-            # Plot waypoint reach times
-            for i, reach_time in enumerate(self.controller.waypoint_reach_times):
-                plt.axvline(x=reach_time, color='red', linestyle='--', alpha=0.5, linewidth=1.5)
-                plt.text(reach_time, plt.ylim()[1]*0.9, f'WP{i+1}', color='red', fontsize=9, ha='center')
+            # Plot wind direction arrow
+            if self.controller is not None:
+                wind_vector = self.controller.wind
+            else:
+                wind_vector = np.array([-self.wind_speed, 0])  # Default wind blowing west
             
-            plt.xlabel('Time (s)', fontsize=12)
-            plt.ylabel('Heading Error (degrees)', fontsize=12)
-            plt.title('Heading Error Over Time', fontsize=14)
+            # Position arrow in bottom-right corner of plot
+            x_range = s[0, :].max() - s[0, :].min()
+            y_range = s[1, :].max() - s[1, :].min()
+            x_min, x_max = s[0, :].min(), s[0, :].max()
+            y_min, y_max = s[1, :].min(), s[1, :].max()
+            
+            arrow_x = x_max - 0.15 * x_range
+            arrow_y = y_min + 0.15 * y_range
+            arrow_length = 0.1 * max(x_range, y_range)
+            
+            # Normalize wind vector and scale to arrow length
+            wind_magnitude = np.linalg.norm(wind_vector)
+            if wind_magnitude > 0:
+                wind_dx = arrow_length * wind_vector[0] / wind_magnitude
+                wind_dy = arrow_length * wind_vector[1] / wind_magnitude
+            else:
+                wind_dx, wind_dy = 0, 0
+            
+            # Draw arrow showing where wind is BLOWING TO
+            plt.arrow(arrow_x, arrow_y, wind_dx, wind_dy, 
+                    head_width=arrow_length*0.3, head_length=arrow_length*0.25,
+                    fc='cyan', ec='blue', linewidth=2, label='Wind Direction', zorder=10)
+            
+            # Add wind vector text
+            plt.text(arrow_x, arrow_y - 0.05 * y_range, 
+                    f'Wind: ({wind_vector[0]:.1f}, {wind_vector[1]:.1f}) m/s',
+                    fontsize=10, color='blue', ha='center', weight='bold')
+            
+            plt.xlabel('X Position (m)', fontsize=12)
+            plt.ylabel('Y Position (m)', fontsize=12)
+            plt.title('Saildrone Trajectory', fontsize=14)
+            plt.legend(fontsize=9, loc='best')
             plt.grid(True, alpha=0.3)
-            plt.axhline(y=0, color='k', linestyle='--', alpha=0.3)
+            plt.axis('equal')
 
-            # Plot 3: Control Angles Over Time
-            plt.figure(figsize=(10, 8))
-            
-            # Rudder angles subplot
-            plt.subplot(2, 1, 1)
-            plt.plot(time_steps, np.rad2deg(history['rudder_desired']), 'r--', 
-                    linewidth=2, label='Desired Rudder Angle', alpha=0.7)
-            plt.plot(time_steps, np.rad2deg(history['rudder_actual']), 'r-', 
-                    linewidth=2, label='Actual Rudder Angle')
-            plt.axhline(y=30, color='k', linestyle=':', alpha=0.5, label='Limit (±30°)')
-            plt.axhline(y=-30, color='k', linestyle=':', alpha=0.5)
-            
-            # Plot waypoint reach times
-            for i, reach_time in enumerate(self.controller.waypoint_reach_times):
-                plt.axvline(x=reach_time, color='red', linestyle='--', alpha=0.5, linewidth=1.5)
-                plt.text(reach_time, plt.ylim()[1]*0.9, f'WP{i+1}', color='red', fontsize=9, ha='center')
-            
-            plt.xlabel('Time (s)', fontsize=12)
-            plt.ylabel('Rudder Angle (degrees)', fontsize=12)
-            plt.title('Rudder Angle Over Time', fontsize=14)
-            plt.legend(fontsize=10)
-            plt.grid(True, alpha=0.3)
-            
-            # Sail angles subplot
-            plt.subplot(2, 1, 2)
-            plt.plot(time_steps, np.rad2deg(history['sail_desired']), 'g--', 
-                    linewidth=2, label='Desired Sail Angle', alpha=0.7)
-            plt.plot(time_steps, np.rad2deg(history['sail_actual']), 'g-', 
-                    linewidth=2, label='Actual Sail Angle')
-            plt.axhline(y=180, color='k', linestyle=':', alpha=0.5, label='Limit (±180°)')
-            plt.axhline(y=-180, color='k', linestyle=':', alpha=0.5)
-            
-            # Plot waypoint reach times
-            for i, reach_time in enumerate(self.controller.waypoint_reach_times):
-                plt.axvline(x=reach_time, color='red', linestyle='--', alpha=0.5, linewidth=1.5)
-                plt.text(reach_time, plt.ylim()[1]*0.9, f'WP{i+1}', color='red', fontsize=9, ha='center')
-            
-            plt.xlabel('Time (s)', fontsize=12)
-            plt.ylabel('Sail Angle (degrees)', fontsize=12)
-            plt.title('Sail Angle Over Time', fontsize=14)
-            plt.legend(fontsize=10)
-            plt.grid(True, alpha=0.3)
-            
-            plt.tight_layout()
+            # Plot 2: Heading Error Over Time
+            if self.controller and hasattr(self.controller, 'control_history'):
+                history = self.controller.control_history
+                actual_tmax = t[-1]
+                time_steps = np.linspace(0, actual_tmax, len(history['heading_error']))
+                
+                plt.figure(figsize=(10, 5))
+                plt.plot(time_steps, np.rad2deg(history['heading_error']), 'b-', linewidth=2)
+                
+                # Plot waypoint reach times
+                for i, reach_time in enumerate(self.controller.waypoint_reach_times):
+                    plt.axvline(x=reach_time, color='red', linestyle='--', alpha=0.5, linewidth=1.5)
+                    plt.text(reach_time, plt.ylim()[1]*0.9, f'WP{i+1}', color='red', fontsize=9, ha='center')
+                
+                plt.xlabel('Time (s)', fontsize=12)
+                plt.ylabel('Heading Error (degrees)', fontsize=12)
+                plt.title('Heading Error Over Time', fontsize=14)
+                plt.grid(True, alpha=0.3)
+                plt.axhline(y=0, color='k', linestyle='--', alpha=0.3)
 
-        # Show all plots at once
-        plt.show()
+                # Plot 3: Control Angles Over Time
+                plt.figure(figsize=(10, 8))
+                
+                # Rudder angles subplot
+                plt.subplot(2, 1, 1)
+                plt.plot(time_steps, np.rad2deg(history['rudder_desired']), 'r--', 
+                        linewidth=2, label='Desired Rudder Angle', alpha=0.7)
+                plt.plot(time_steps, np.rad2deg(history['rudder_actual']), 'r-', 
+                        linewidth=2, label='Actual Rudder Angle')
+                plt.axhline(y=30, color='k', linestyle=':', alpha=0.5, label='Limit (±30°)')
+                plt.axhline(y=-30, color='k', linestyle=':', alpha=0.5)
+                
+                # Plot waypoint reach times
+                for i, reach_time in enumerate(self.controller.waypoint_reach_times):
+                    plt.axvline(x=reach_time, color='red', linestyle='--', alpha=0.5, linewidth=1.5)
+                    plt.text(reach_time, plt.ylim()[1]*0.9, f'WP{i+1}', color='red', fontsize=9, ha='center')
+                
+                plt.xlabel('Time (s)', fontsize=12)
+                plt.ylabel('Rudder Angle (degrees)', fontsize=12)
+                plt.title('Rudder Angle Over Time', fontsize=14)
+                plt.legend(fontsize=10)
+                plt.grid(True, alpha=0.3)
+                
+                # Sail angles subplot
+                plt.subplot(2, 1, 2)
+                plt.plot(time_steps, np.rad2deg(history['sail_desired']), 'g--', 
+                        linewidth=2, label='Desired Sail Angle', alpha=0.7)
+                plt.plot(time_steps, np.rad2deg(history['sail_actual']), 'g-', 
+                        linewidth=2, label='Actual Sail Angle')
+                plt.axhline(y=180, color='k', linestyle=':', alpha=0.5, label='Limit (±180°)')
+                plt.axhline(y=-180, color='k', linestyle=':', alpha=0.5)
+                
+                # Plot waypoint reach times
+                for i, reach_time in enumerate(self.controller.waypoint_reach_times):
+                    plt.axvline(x=reach_time, color='red', linestyle='--', alpha=0.5, linewidth=1.5)
+                    plt.text(reach_time, plt.ylim()[1]*0.9, f'WP{i+1}', color='red', fontsize=9, ha='center')
+                
+                plt.xlabel('Time (s)', fontsize=12)
+                plt.ylabel('Sail Angle (degrees)', fontsize=12)
+                plt.title('Sail Angle Over Time', fontsize=14)
+                plt.legend(fontsize=10)
+                plt.grid(True, alpha=0.3)
+                
+                plt.tight_layout()
+
+            # Show all plots at once
+            plt.show()
 
         return t, s

@@ -233,6 +233,21 @@ class saildrone:
         self.course_params_list = course_params_list
         self.controller = controller  # Autonomous controller
         self.wind_speed = wind_speed  # Wind speed in m/s
+        
+        # Initialize force history tracking
+        self.force_history = {
+            'drag_x': [],
+            'drag_y': [],
+            'lift_x': [],
+            'lift_y': [],
+            'hydro_x': [],
+            'hydro_y': [],
+            'torque_hydro': [],
+            'torque_aero': [],
+            'apparent_wind_angle': [],
+            'heading': [],
+            'attack_angle': []
+        }
 
     def get_active_course_params(self, t):
         """
@@ -297,21 +312,36 @@ class saildrone:
         force_hydro, torque_hydro = saildrone_hydro.get_vals(
             np.array([s[3], s[4]]), s[2], s[5], rudder_angle)
 
-        attack_angle = -(s[2] + sail_angle) + aparent_wind_angle
+        attack_angle = (s[2] - sail_angle) + aparent_wind_angle
         attack_angle = np.arctan2(np.sin(attack_angle), np.cos(attack_angle))
         
         c_d = 1 - np.cos(2*(attack_angle))
         c_l = 1.5*np.sin(2*(attack_angle) + 0.5 * np.sin(2*(attack_angle)))
         F_d = 0.5 * rho * A_sail * np.linalg.norm(v_apparent_wind)**2 * c_d
         F_l = 0.5 * rho * A_sail * np.linalg.norm(v_apparent_wind)**2 * c_l
-        F_d_x = F_d * np.cos(aparent_wind_angle)
+        F_d_x = F_d * -np.cos(aparent_wind_angle)
         F_d_y = F_d * np.sin(aparent_wind_angle)
-        F_l_x = F_l * -np.cos(aparent_wind_angle + np.pi/2)
-        F_l_y = F_l * np.sin(aparent_wind_angle + np.pi/2)
+        F_l_x = F_l * np.sin(aparent_wind_angle)
+        F_l_y = F_l * np.cos(aparent_wind_angle)
+        
+        torque_aero = (-0.1*np.cos(s[2])*(F_d_y + F_l_y) + 0.1*np.sin(s[2])*(F_d_x + F_l_x))
         
         s_dot[3] = 1/M * (F_d_x + F_l_x + force_hydro[0])
         s_dot[4] = 1/M * (F_d_y + F_l_y + force_hydro[1])
-        s_dot[5] = 1/I * (torque_hydro + (-0.1*np.cos(s[2])*(F_d_y + F_l_y) + 0.1*np.sin(s[2])*(F_d_x + F_l_x)))
+        s_dot[5] = 1/I * (torque_hydro + torque_aero)
+        
+        # Store force components for plotting
+        self.force_history['drag_x'].append(F_d_x)
+        self.force_history['drag_y'].append(F_d_y)
+        self.force_history['lift_x'].append(F_l_x)
+        self.force_history['lift_y'].append(F_l_y)
+        self.force_history['hydro_x'].append(force_hydro[0])
+        self.force_history['hydro_y'].append(force_hydro[1])
+        self.force_history['torque_hydro'].append(torque_hydro)
+        self.force_history['torque_aero'].append(torque_aero)
+        self.force_history['apparent_wind_angle'].append(aparent_wind_angle)
+        self.force_history['heading'].append(s[2])
+        self.force_history['attack_angle'].append(attack_angle)
 
         return s_dot
 
@@ -349,7 +379,6 @@ class saildrone:
         return snext
 
 
-
     def simulate_course(self, t0, dt, s0, plot=True):
         """
         Simulate the saildrone trajectory with a sequence of course parameters.
@@ -370,6 +399,21 @@ class saildrone:
         s : numpy.ndarray
             State array with shape (6, n_timesteps).
         """
+        # Reset force history for new simulation
+        self.force_history = {
+            'drag_x': [],
+            'drag_y': [],
+            'lift_x': [],
+            'lift_y': [],
+            'hydro_x': [],
+            'hydro_y': [],
+            'torque_hydro': [],
+            'torque_aero': [],
+            'apparent_wind_angle': [],
+            'heading': [],
+            'attack_angle': []
+        }
+        
         t = np.array([t0])
         s = s0
         n = 0
@@ -444,14 +488,15 @@ class saildrone:
             else:
                 wind_vector = np.array([-self.wind_speed, 0])  # Default wind blowing west
             
-            # Position arrow in bottom-right corner of plot
-            x_range = s[0, :].max() - s[0, :].min()
-            y_range = s[1, :].max() - s[1, :].min()
-            x_min, x_max = s[0, :].min(), s[0, :].max()
-            y_min, y_max = s[1, :].min(), s[1, :].max()
+            # Position arrow in bottom-right corner of the entire plot axes
+            ax = plt.gca()
+            x_lim = ax.get_xlim()
+            y_lim = ax.get_ylim()
+            x_range = x_lim[1] - x_lim[0]
+            y_range = y_lim[1] - y_lim[0]
             
-            arrow_x = x_max - 0.15 * x_range
-            arrow_y = y_min + 0.15 * y_range
+            arrow_x = x_lim[1] + 3 * x_range
+            arrow_y = y_lim[0] + 0.15 * y_range
             arrow_length = 0.1 * max(x_range, y_range)
             
             # Normalize wind vector and scale to arrow length
@@ -541,6 +586,269 @@ class saildrone:
                 plt.title('Sail Angle Over Time', fontsize=14)
                 plt.legend(fontsize=10)
                 plt.grid(True, alpha=0.3)
+                
+                plt.tight_layout()
+
+            # Plot 4: Velocity Over Time
+            plt.figure(figsize=(10, 10))
+            
+            # Ensure t and s have matching dimensions
+            min_len = min(len(t), s.shape[1])
+            t_plot = t[:min_len]
+            
+            # Calculate overall velocity magnitude
+            velocity_magnitude = np.sqrt(s[3, :min_len]**2 + s[4, :min_len]**2)
+            
+            # Overall Velocity subplot
+            plt.subplot(3, 1, 1)
+            plt.plot(t_plot, velocity_magnitude, 'g-', linewidth=2, label='Velocity')
+            plt.xlabel('Time (s)', fontsize=12)
+            plt.ylabel('Velocity (m/s)', fontsize=12)
+            plt.title('Velocity Over Time', fontsize=14)
+            plt.legend(fontsize=10)
+            plt.grid(True, alpha=0.3)
+            
+            # X Velocity subplot
+            plt.subplot(3, 1, 2)
+            plt.plot(t_plot, s[3, :min_len], 'b-', linewidth=2, label='X Velocity')
+            plt.xlabel('Time (s)', fontsize=12)
+            plt.ylabel('X Velocity (m/s)', fontsize=12)
+            plt.title('X Velocity Over Time', fontsize=14)
+            plt.legend(fontsize=10)
+            plt.grid(True, alpha=0.3)
+            plt.axhline(y=0, color='k', linestyle='--', alpha=0.3)
+            
+            # Y Velocity subplot
+            plt.subplot(3, 1, 3)
+            plt.plot(t_plot, s[4, :min_len], 'r-', linewidth=2, label='Y Velocity')
+            plt.xlabel('Time (s)', fontsize=12)
+            plt.ylabel('Y Velocity (m/s)', fontsize=12)
+            plt.title('Y Velocity Over Time', fontsize=14)
+            plt.legend(fontsize=10)
+            plt.grid(True, alpha=0.3)
+            plt.axhline(y=0, color='k', linestyle='--', alpha=0.3)
+            
+            plt.tight_layout()
+
+            # Plot 5: Force Components Over Time
+            if len(self.force_history['drag_x']) > 0:
+                plt.figure(figsize=(12, 12))
+                
+                # Ensure force history has matching dimensions with time
+                force_len = len(self.force_history['drag_x'])
+                # Since state_deriv_drone is called multiple times per timestep (RK4),
+                # we need to subsample to match the simulation timesteps
+                # Take every 4th sample (k1, k2, k3, k4 in RK4)
+                step = 4
+                indices = np.arange(0, force_len, step)[:min_len]
+                t_force = t_plot[:len(indices)]
+                
+                # Drag Force Components
+                plt.subplot(4, 2, 1)
+                plt.plot(t_force, np.array(self.force_history['drag_x'])[indices], 'b-', linewidth=2)
+                plt.axvline(x=65, color='orange', linestyle='--', linewidth=2, alpha=0.7)
+                plt.xlabel('Time (s)', fontsize=12)
+                plt.ylabel('Drag Force X (N)', fontsize=12)
+                plt.title('Drag Force X Component Over Time', fontsize=14)
+                plt.grid(True, alpha=0.3)
+                plt.axhline(y=0, color='k', linestyle='--', alpha=0.3)
+                
+                plt.subplot(4, 2, 2)
+                plt.plot(t_force, np.array(self.force_history['drag_y'])[indices], 'r-', linewidth=2)
+                plt.axvline(x=65, color='orange', linestyle='--', linewidth=2, alpha=0.7)
+                plt.xlabel('Time (s)', fontsize=12)
+                plt.ylabel('Drag Force Y (N)', fontsize=12)
+                plt.title('Drag Force Y Component Over Time', fontsize=14)
+                plt.grid(True, alpha=0.3)
+                plt.axhline(y=0, color='k', linestyle='--', alpha=0.3)
+                
+                # Lift Force Components
+                plt.subplot(4, 2, 3)
+                plt.plot(t_force, np.array(self.force_history['lift_x'])[indices], 'b-', linewidth=2)
+                plt.axvline(x=65, color='orange', linestyle='--', linewidth=2, alpha=0.7)
+                plt.xlabel('Time (s)', fontsize=12)
+                plt.ylabel('Lift Force X (N)', fontsize=12)
+                plt.title('Lift Force X Component Over Time', fontsize=14)
+                plt.grid(True, alpha=0.3)
+                plt.axhline(y=0, color='k', linestyle='--', alpha=0.3)
+                
+                plt.subplot(4, 2, 4)
+                plt.plot(t_force, np.array(self.force_history['lift_y'])[indices], 'r-', linewidth=2)
+                plt.axvline(x=65, color='orange', linestyle='--', linewidth=2, alpha=0.7)
+                plt.xlabel('Time (s)', fontsize=12)
+                plt.ylabel('Lift Force Y (N)', fontsize=12)
+                plt.title('Lift Force Y Component Over Time', fontsize=14)
+                plt.grid(True, alpha=0.3)
+                plt.axhline(y=0, color='k', linestyle='--', alpha=0.3)
+                
+                # Hydrodynamic Force Components
+                plt.subplot(4, 2, 5)
+                plt.plot(t_force, np.array(self.force_history['hydro_x'])[indices], 'b-', linewidth=2)
+                plt.axvline(x=65, color='orange', linestyle='--', linewidth=2, alpha=0.7)
+                plt.xlabel('Time (s)', fontsize=12)
+                plt.ylabel('Hydro Force X (N)', fontsize=12)
+                plt.title('Hydrodynamic Force X Component Over Time', fontsize=14)
+                plt.grid(True, alpha=0.3)
+                plt.axhline(y=0, color='k', linestyle='--', alpha=0.3)
+                
+                plt.subplot(4, 2, 6)
+                plt.plot(t_force, np.array(self.force_history['hydro_y'])[indices], 'r-', linewidth=2)
+                plt.axvline(x=65, color='orange', linestyle='--', linewidth=2, alpha=0.7)
+                plt.xlabel('Time (s)', fontsize=12)
+                plt.ylabel('Hydro Force Y (N)', fontsize=12)
+                plt.title('Hydrodynamic Force Y Component Over Time', fontsize=14)
+                plt.grid(True, alpha=0.3)
+                plt.axhline(y=0, color='k', linestyle='--', alpha=0.3)
+                
+                # Torque Components
+                plt.subplot(4, 2, 7)
+                plt.plot(t_force, np.array(self.force_history['torque_hydro'])[indices], 'g-', linewidth=2)
+                plt.axvline(x=65, color='orange', linestyle='--', linewidth=2, alpha=0.7)
+                plt.xlabel('Time (s)', fontsize=12)
+                plt.ylabel('Hydro Torque (N·m)', fontsize=12)
+                plt.title('Hydrodynamic Torque Over Time', fontsize=14)
+                plt.grid(True, alpha=0.3)
+                plt.axhline(y=0, color='k', linestyle='--', alpha=0.3)
+                
+                plt.subplot(4, 2, 8)
+                plt.plot(t_force, np.array(self.force_history['torque_aero'])[indices], 'm-', linewidth=2)
+                plt.axvline(x=65, color='orange', linestyle='--', linewidth=2, alpha=0.7)
+                plt.xlabel('Time (s)', fontsize=12)
+                plt.ylabel('Aero Torque (N·m)', fontsize=12)
+                plt.title('Aerodynamic Torque Over Time', fontsize=14)
+                plt.grid(True, alpha=0.3)
+                plt.axhline(y=0, color='k', linestyle='--', alpha=0.3)
+                
+                plt.tight_layout()
+
+            # Plot 6: Overall Force Magnitudes Over Time
+            if len(self.force_history['drag_x']) > 0:
+                plt.figure(figsize=(10, 10))
+                
+                # Calculate overall force magnitudes
+                drag_magnitude = np.sqrt(
+                    np.array(self.force_history['drag_x'])**2 + 
+                    np.array(self.force_history['drag_y'])**2
+                )[indices]
+                
+                lift_magnitude = np.sqrt(
+                    np.array(self.force_history['lift_x'])**2 + 
+                    np.array(self.force_history['lift_y'])**2
+                )[indices]
+                
+                hydro_magnitude = np.sqrt(
+                    np.array(self.force_history['hydro_x'])**2 + 
+                    np.array(self.force_history['hydro_y'])**2
+                )[indices]
+                
+                # Overall Drag Force
+                plt.subplot(3, 1, 1)
+                plt.plot(t_force, drag_magnitude, 'b-', linewidth=2, label='Drag Force')
+                plt.axvline(x=65, color='orange', linestyle='--', linewidth=2, alpha=0.7)
+                plt.xlabel('Time (s)', fontsize=12)
+                plt.ylabel('Drag Force (N)', fontsize=12)
+                plt.title('Overall Drag Force Magnitude Over Time', fontsize=14)
+                plt.legend(fontsize=10)
+                plt.grid(True, alpha=0.3)
+                
+                # Overall Lift Force
+                plt.subplot(3, 1, 2)
+                plt.plot(t_force, lift_magnitude, 'g-', linewidth=2, label='Lift Force')
+                plt.axvline(x=65, color='orange', linestyle='--', linewidth=2, alpha=0.7)
+                plt.xlabel('Time (s)', fontsize=12)
+                plt.ylabel('Lift Force (N)', fontsize=12)
+                plt.title('Overall Lift Force Magnitude Over Time', fontsize=14)
+                plt.legend(fontsize=10)
+                plt.grid(True, alpha=0.3)
+                
+                # Overall Hydrodynamic Force
+                plt.subplot(3, 1, 3)
+                plt.plot(t_force, hydro_magnitude, 'r-', linewidth=2, label='Hydrodynamic Force')
+                plt.axvline(x=65, color='orange', linestyle='--', linewidth=2, alpha=0.7)
+                plt.xlabel('Time (s)', fontsize=12)
+                plt.ylabel('Hydro Force (N)', fontsize=12)
+                plt.title('Overall Hydrodynamic Force Magnitude Over Time', fontsize=14)
+                plt.legend(fontsize=10)
+                plt.grid(True, alpha=0.3)
+                
+                plt.tight_layout()
+
+            # Plot 7: Total Force Components (Sum of all forces in X and Y)
+            if len(self.force_history['drag_x']) > 0:
+                plt.figure(figsize=(10, 6))
+                
+                # Calculate total force in X and Y directions
+                total_force_x = (
+                    np.array(self.force_history['drag_x']) + 
+                    np.array(self.force_history['lift_x']) + 
+                    np.array(self.force_history['hydro_x'])
+                )[indices]
+                
+                total_force_y = (
+                    np.array(self.force_history['drag_y']) + 
+                    np.array(self.force_history['lift_y']) + 
+                    np.array(self.force_history['hydro_y'])
+                )[indices]
+                
+                # Total X Force
+                plt.subplot(2, 1, 1)
+                plt.plot(t_force, total_force_x, 'b-', linewidth=2, label='Total X Force')
+                plt.axvline(x=65, color='orange', linestyle='--', linewidth=2, alpha=0.7)
+                plt.xlabel('Time (s)', fontsize=12)
+                plt.ylabel('Total Force X (N)', fontsize=12)
+                plt.title('Total Force X Component Over Time', fontsize=14)
+                plt.legend(fontsize=10)
+                plt.grid(True, alpha=0.3)
+                plt.axhline(y=0, color='k', linestyle='--', alpha=0.3)
+                
+                # Total Y Force
+                plt.subplot(2, 1, 2)
+                plt.plot(t_force, total_force_y, 'r-', linewidth=2, label='Total Y Force')
+                plt.axvline(x=65, color='orange', linestyle='--', linewidth=2, alpha=0.7)
+                plt.xlabel('Time (s)', fontsize=12)
+                plt.ylabel('Total Force Y (N)', fontsize=12)
+                plt.title('Total Force Y Component Over Time', fontsize=14)
+                plt.legend(fontsize=10)
+                plt.grid(True, alpha=0.3)
+                plt.axhline(y=0, color='k', linestyle='--', alpha=0.3)
+                
+                plt.tight_layout()
+
+            # Plot 8: Apparent Wind Angle, Heading, and Attack Angle Over Time
+            if len(self.force_history['apparent_wind_angle']) > 0:
+                plt.figure(figsize=(10, 9))
+                
+                # Apparent Wind Angle
+                plt.subplot(3, 1, 1)
+                plt.plot(t_force, np.rad2deg(np.array(self.force_history['apparent_wind_angle'])[indices]), 'c-', linewidth=2, label='Apparent Wind Angle')
+                plt.axvline(x=65, color='orange', linestyle='--', linewidth=2, alpha=0.7)
+                plt.xlabel('Time (s)', fontsize=12)
+                plt.ylabel('Apparent Wind Angle (degrees)', fontsize=12)
+                plt.title('Apparent Wind Angle Over Time', fontsize=14)
+                plt.legend(fontsize=10)
+                plt.grid(True, alpha=0.3)
+                plt.axhline(y=0, color='k', linestyle='--', alpha=0.3)
+                
+                # Heading
+                plt.subplot(3, 1, 2)
+                plt.plot(t_force, np.rad2deg(np.array(self.force_history['heading'])[indices]), 'm-', linewidth=2, label='Heading')
+                plt.axvline(x=65, color='orange', linestyle='--', linewidth=2, alpha=0.7)
+                plt.xlabel('Time (s)', fontsize=12)
+                plt.ylabel('Heading (degrees)', fontsize=12)
+                plt.title('Heading Over Time', fontsize=14)
+                plt.legend(fontsize=10)
+                plt.grid(True, alpha=0.3)
+                
+                # Attack Angle
+                plt.subplot(3, 1, 3)
+                plt.plot(t_force, np.rad2deg(np.array(self.force_history['attack_angle'])[indices]), 'r-', linewidth=2, label='Attack Angle')
+                plt.axvline(x=65, color='orange', linestyle='--', linewidth=2, alpha=0.7)
+                plt.xlabel('Time (s)', fontsize=12)
+                plt.ylabel('Attack Angle (degrees)', fontsize=12)
+                plt.title('Attack Angle Over Time', fontsize=14)
+                plt.legend(fontsize=10)
+                plt.grid(True, alpha=0.3)
+                plt.axhline(y=0, color='k', linestyle='--', alpha=0.3)
                 
                 plt.tight_layout()
 

@@ -2,7 +2,6 @@ import numpy as np
 import saildrone_hydro
 import matplotlib.pyplot as plt
 
-
 class AutonomousController:
     """
     Autonomous controller that navigates through waypoints using PID control.
@@ -29,6 +28,48 @@ class AutonomousController:
         self.Kp_rudder = Kp_rudder
         self.lookahead_distance = lookahead_distance
         self.waypoint_reach_times = []
+
+    def c_d(self, alpha):
+        return 1 - np.cos(2 * alpha)
+
+    def c_l(self, alpha):
+        return 1.5 * np.sin(2 * alpha) + 0.5 * np.sin(2 * alpha)
+
+    def optimal_sail_angle(self, heading, apparent_wind_angle):
+        best_force = -np.inf
+        best_sail_angle = 0
+        
+        wind_dir = np.array([np.cos(apparent_wind_angle), np.sin(apparent_wind_angle)])
+        wind_perp = np.array([-wind_dir[1], wind_dir[0]])
+        heading_vec = np.array([np.cos(heading), np.sin(heading)])
+        
+        for sail_angle in np.linspace(-np.pi/2, np.pi/2, 100):
+            attack_angle = (heading + sail_angle) - apparent_wind_angle
+            attack_angle = np.arctan2(np.sin(attack_angle), np.cos(attack_angle))
+            
+            if attack_angle > np.pi/2:
+                attack_angle = np.pi - attack_angle
+            elif attack_angle < -np.pi/2:
+                attack_angle = -np.pi - attack_angle
+            
+            c_d = 1 - np.cos(2 * attack_angle)
+            c_l = 1.5 * np.sin(2 * attack_angle) + 0.5 * np.sin(2 * attack_angle)
+            
+            # Just need relative magnitude, skip constants
+            F_d = c_d * wind_dir
+            F_l = c_l * wind_perp
+            F_aero = F_d + F_l
+            
+            f_drive = np.dot(F_aero, heading_vec)
+
+            if np.sign(sail_angle) != np.sign(best_sail_angle):
+                f_drive *= 0.95  # 5% penalty for switching
+            
+            if f_drive > best_force:
+                best_force = f_drive
+                best_sail_angle = sail_angle
+        
+        return best_sail_angle
         
     def get_control_inputs(self, state, current_time=None):
         """
@@ -89,14 +130,14 @@ class AutonomousController:
         apparent_wind = self.wind - state[3:5]
         apparent_wind = np.arctan2(apparent_wind[1], apparent_wind[0])
 
-        relative_apparent_wind = apparent_wind - state[2]
+        # relative_apparent_wind = state[2] - apparent_wind
 
-        # Step 4: Normalize to [-π, π]
-        relative_apparent_wind = np.arctan2(np.sin(relative_apparent_wind), np.cos(relative_apparent_wind))
+        # # Step 4: Normalize to [-π, π]
+        # relative_apparent_wind = np.arctan2(np.sin(relative_apparent_wind), np.cos(relative_apparent_wind))
         
         # Calculate desired sail angle before clipping
-        sail_desired = relative_apparent_wind/2
-        sail_angle = np.clip(sail_desired, -np.pi, np.pi)
+        sail_desired = self.optimal_sail_angle(state[2], apparent_wind)
+        sail_angle = sail_desired
         
         # Store control data for plotting
         if not hasattr(self, 'control_history'):
@@ -286,10 +327,8 @@ class saildrone:
         F_aero = np.array([F_d_x + F_l_x, F_d_y + F_l_y])
         torque_aero = np.cross(r_sail, F_aero)
 
-        #the above is the same as:
+        # the above is the same as:
         # torque_aero = (-0.1*np.cos(s[2])*(F_d_y + F_l_y) + 0.1*np.sin(s[2])*(F_d_x + F_l_x))
-
-
         
         s_dot[3] = 1/M * (F_d_x + F_l_x + force_hydro[0])
         s_dot[4] = 1/M * (F_d_y + F_l_y + force_hydro[1])
@@ -385,7 +424,7 @@ class saildrone:
         s = s0
         n = 0
 
-        while t[n] < 3500:
+        while t[n] < 35000:
             t = np.append(t, t[-1] + dt)
             
             # Use autonomous controller if available, otherwise use course_params_list

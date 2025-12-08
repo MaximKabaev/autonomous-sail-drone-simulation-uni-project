@@ -401,7 +401,7 @@ class SailDroneGUI:
         # Create controller
         controller = ode.AutonomousController(
             waypoints=self.waypoints,
-            wind=tuple(self.wind),
+            wind=self.wind,
             Kp_rudder=self.kp_rudder,
             lookahead_distance=self.lookahead_distance
         )

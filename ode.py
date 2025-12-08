@@ -7,7 +7,7 @@ class AutonomousController:
     """
     Autonomous controller that navigates through waypoints using PID control.
     """
-    def __init__(self, waypoints, wind=(-6.7, 0), Kp_rudder=0.5, lookahead_distance=5.0):
+    def __init__(self, waypoints, wind=[-6.7, 0], Kp_rudder=0.5, lookahead_distance=5.0):
         """
         Initialize the autonomous controller.
         
@@ -26,8 +26,6 @@ class AutonomousController:
         self.waypoints = waypoints
         self.current_waypoint_idx = 0
         self.wind = wind
-        self.wind_direction = np.arctan2(wind[1], wind[0]) + np.pi
-        self.wind_direction = np.arctan2(np.sin(self.wind_direction), np.cos(self.wind_direction))
         self.Kp_rudder = Kp_rudder
         self.lookahead_distance = lookahead_distance
         self.waypoint_reach_times = []
@@ -88,11 +86,16 @@ class AutonomousController:
         rudder_desired = self.Kp_rudder * heading_error_compensated
         rudder_angle = np.clip(rudder_desired, -np.deg2rad(30), np.deg2rad(30))
         
-        apparent_wind = self.wind_direction - current_heading
-        apparent_wind = np.arctan2(np.sin(apparent_wind), np.cos(apparent_wind))
+        apparent_wind = self.wind - state[3:5]
+        apparent_wind = np.arctan2(apparent_wind[1], apparent_wind[0])
+
+        relative_apparent_wind = apparent_wind - state[2]
+
+        # Step 4: Normalize to [-π, π]
+        relative_apparent_wind = np.arctan2(np.sin(relative_apparent_wind), np.cos(relative_apparent_wind))
         
         # Calculate desired sail angle before clipping
-        sail_desired = apparent_wind / 2
+        sail_desired = relative_apparent_wind/2
         sail_angle = np.clip(sail_desired, -np.pi, np.pi)
         
         # Store control data for plotting
@@ -121,65 +124,6 @@ class AutonomousController:
         """Check if all waypoints have been reached."""
         return len(self.waypoint_reach_times) >= len(self.waypoints)
 
-# def sail_angle_at_time(t):
-#     """
-#     Compute the sail angle at time t.
-    
-#     Parameters
-#     ----------
-#     t : float64
-#         Time in seconds.
-        
-#     Returns
-#     -------
-#     sail_angle : float64
-#         Sail angle in radians.
-#     """
-#     # THIS FUNCTION IS INCOMPLETE.
-#     # ------------------------------------------------------------------------
-#     sail_angle = np.clip(np.deg2rad(-45), -np.pi, np.pi)  # Placeholder value
-#     return sail_angle
-
-# def rudder_angle_at_time(t):
-#     """
-#     Compute the rudder angle at time t.
-    
-#     Parameters
-#     ----------
-#     t : float64
-#         Time in seconds.
-        
-#     Returns
-#     -------
-#     rudder_angle : float64
-#         Rudder angle in radians.
-#     """
-#     # THIS FUNCTION IS INCOMPLETE.
-#     # ------------------------------------------------------------------------
-#     rudder_angle = np.clip(np.deg2rad(0), -np.pi/6, np.pi/6)  # Placeholder value
-#     return rudder_angle
-
-# def wind_at_time(t):
-#     """
-#     Compute the wind velocity at time t.
-
-#     Parameters
-#     ----------
-#     t : float64
-#         Time in seconds.
-        
-#     Returns
-#     -------
-#     wind_vector : numpy.ndarray
-#         wind velocity vector in m/s.
-#     """
-#     # THIS FUNCTION IS INCOMPLETE.
-#     # ------------------------------------------------------------------------
-
-#     #NOTE: will be calculated from just the angle of heading as
-#     wind_velocity = np.array([-6.7, 0])  # Placeholder value
-#     return wind_velocity
-
 class course_parameters:
     """
     Defines sail and rudder angles for a specific time interval.
@@ -203,7 +147,7 @@ class course_parameters:
         self.rudder_angle_rad = np.clip(np.deg2rad(rudder_angle_deg), -np.deg2rad(30), np.deg2rad(30))
 
 class saildrone:
-    def __init__(self, M=2500, I=10000, rho=1.225, A_sail=15.0, course_params_list=[], controller=None, wind_speed=6.7):
+    def __init__(self, M=2500, I=10000, rho=1.225, A_sail=15.0, course_params_list=[], controller=None, wind_speed=-6.7):
         """
         Initialize the saildrone with physical parameters and course information.
 
@@ -295,12 +239,13 @@ class saildrone:
         if self.controller is not None:
             v_wind = self.controller.wind
         else:
-            v_wind = np.array([-self.wind_speed, 0])  # Default: wind blowing west (from east)
+            v_wind = np.array([self.wind_speed, 0])  # Default: wind blowing west (from east)
 
         wind_angle = np.arctan2(v_wind[1], v_wind[0])
 
         v_apparent_wind = v_wind - np.array([s[3], s[4]])
-        aparent_wind_angle = np.arctan2(v_apparent_wind[1], v_apparent_wind[0])
+        aparent_wind_angle = np.arctan2(v_apparent_wind[1], v_apparent_wind[0]) 
+        wind_dir = v_apparent_wind / np.linalg.norm(v_apparent_wind)
 
         s_dot = np.zeros(6)
         s_dot[0] = s[3]                     # dx/dt = vx
@@ -312,19 +257,39 @@ class saildrone:
         force_hydro, torque_hydro = saildrone_hydro.get_vals(
             np.array([s[3], s[4]]), s[2], s[5], rudder_angle)
 
-        attack_angle = (s[2] - sail_angle) + aparent_wind_angle
+        attack_angle = (s[2] + sail_angle) - aparent_wind_angle
         attack_angle = np.arctan2(np.sin(attack_angle), np.cos(attack_angle))
+        # Then limit to [-pi/2, pi/2] for sail attack angle
+        if attack_angle > np.pi/2:
+            attack_angle = np.pi - attack_angle
+        elif attack_angle < -np.pi/2:
+            attack_angle = -np.pi - attack_angle
         
         c_d = 1 - np.cos(2*(attack_angle))
         c_l = 1.5*np.sin(2*(attack_angle) + 0.5 * np.sin(2*(attack_angle)))
         F_d = 0.5 * rho * A_sail * np.linalg.norm(v_apparent_wind)**2 * c_d
         F_l = 0.5 * rho * A_sail * np.linalg.norm(v_apparent_wind)**2 * c_l
-        F_d_x = F_d * -np.cos(aparent_wind_angle)
-        F_d_y = F_d * np.sin(aparent_wind_angle)
-        F_l_x = F_l * np.sin(aparent_wind_angle)
-        F_l_y = F_l * np.cos(aparent_wind_angle)
+
+        F_d = F_d * wind_dir
+        wind_perp = np.array([-wind_dir[1], wind_dir[0]])
         
-        torque_aero = (-0.1*np.cos(s[2])*(F_d_y + F_l_y) + 0.1*np.sin(s[2])*(F_d_x + F_l_x))
+        F_l = F_l * wind_perp
+
+        F_d_x =  F_d[0]
+        F_d_y =  F_d[1]
+        F_l_x =  F_l[0]
+        F_l_y =  F_l[1]
+        
+        d_sail = -0.1  # Sail is 0.1m BEHIND center of mass
+
+        r_sail = d_sail * np.array([np.cos(s[2]), np.sin(s[2])])
+        F_aero = np.array([F_d_x + F_l_x, F_d_y + F_l_y])
+        torque_aero = np.cross(r_sail, F_aero)
+
+        #the above is the same as:
+        # torque_aero = (-0.1*np.cos(s[2])*(F_d_y + F_l_y) + 0.1*np.sin(s[2])*(F_d_x + F_l_x))
+
+
         
         s_dot[3] = 1/M * (F_d_x + F_l_x + force_hydro[0])
         s_dot[4] = 1/M * (F_d_y + F_l_y + force_hydro[1])
@@ -375,7 +340,9 @@ class saildrone:
         D = self.state_deriv_drone(t + dt, s + dt * C, sail_angle, rudder_angle)
 
         snext = s + (dt/6) * (A + 2*B + 2*C + D)
-
+        
+        # Normalize heading to [-pi, pi]
+        snext[2] = np.arctan2(np.sin(snext[2]), np.cos(snext[2]))
         return snext
 
 
@@ -486,7 +453,7 @@ class saildrone:
             if self.controller is not None:
                 wind_vector = self.controller.wind
             else:
-                wind_vector = np.array([-self.wind_speed, 0])  # Default wind blowing west
+                wind_vector = np.array([self.wind_speed, 0])  # Default wind blowing west
             
             # Position arrow in bottom-right corner of the entire plot axes
             ax = plt.gca()
@@ -597,7 +564,7 @@ class saildrone:
             t_plot = t[:min_len]
             
             # Calculate overall velocity magnitude
-            velocity_magnitude = np.sqrt(s[3, :min_len]**2 + s[4, :min_len]**2)
+            velocity_magnitude = np.sqrt(s[3]**2 + s[4]**2)
             
             # Overall Velocity subplot
             plt.subplot(3, 1, 1)

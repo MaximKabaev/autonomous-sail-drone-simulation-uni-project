@@ -2,6 +2,8 @@ import ode
 import numpy as np
 import matplotlib.pyplot as plt
 
+import saildrone_hydro
+
 if __name__ == '__main__':
 
     # Initial state vector
@@ -10,9 +12,17 @@ if __name__ == '__main__':
                 [0.0],
                 [0.0],
                 [np.pi/2],
-                [0.0],
+                [0],
                 [2.9],
                 [0.0]])
+    
+    # s0 = np.array([
+    #             [0.0],
+    #             [0.0],
+    #             [np.pi],
+    #             [-2.9],
+    #             [0],
+    #             [0.0]])
     
 
     # ---------- AUTONOMOUS MODE -----------
@@ -40,5 +50,13 @@ if __name__ == '__main__':
         ode.course_parameters(60, 65, -22.5, 2.1),
         ode.course_parameters(65, 100, -22.5, 0)
     ]
+    # course_params_list = [ 
+    #     ode.course_parameters(0, 1, 0, -30),
+    #     ode.course_parameters(1, 20, 0, 0),
+    # ]
     saildrone = ode.saildrone(course_params_list=course_params_list)
     saildrone.simulate_course(0, 0.1, s0)
+
+    # force, torque = saildrone_hydro.get_vals(np.array([s0[3][0], s0[4][0]]), s0[2][0], s0[5][0], 0)
+    # print("Force:", force)
+    # print("Torque:", torque)

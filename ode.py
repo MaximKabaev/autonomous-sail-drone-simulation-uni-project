@@ -33,7 +33,7 @@ class AutonomousController:
         return 1 - np.cos(2 * alpha)
 
     def c_l(self, alpha):
-        return 1.5 * np.sin(2 * alpha) + 0.5 * np.sin(2 * alpha)
+        return 1.5 * np.sin((2 * alpha) + 0.5 * np.sin(2 * alpha))
 
     def optimal_sail_angle(self, heading, apparent_wind_angle):
         best_force = -np.inf
@@ -424,7 +424,7 @@ class saildrone:
         s = s0
         n = 0
 
-        while t[n] < 35000:
+        while t[n] < 3500:
             t = np.append(t, t[-1] + dt)
             
             # Use autonomous controller if available, otherwise use course_params_list

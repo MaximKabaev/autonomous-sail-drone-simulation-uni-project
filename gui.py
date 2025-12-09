@@ -126,6 +126,14 @@ class SailDroneGUI:
         self.text_lookahead = TextBox(ax_lookahead, 'Lookahead (m):', initial=f'{self.lookahead_distance:.1f}')
         self.text_lookahead.on_submit(self.update_lookahead)
 
+        # Wind indicator axes (below controller parameters)
+        self.ax_wind = plt.axes([panel_x, row_start - 17*row_height, 0.18, 0.18])
+        self.ax_wind.set_xlim(-1, 1)
+        self.ax_wind.set_ylim(-1, 1)
+        self.ax_wind.set_aspect('equal')
+        self.ax_wind.axis('off')
+        self.draw_wind_indicator()
+
         # Button: Clear Waypoints
         ax_clear = plt.axes([0.25, 0.15, 0.15, 0.04])
         self.btn_clear = Button(ax_clear, 'Clear Waypoints')
@@ -148,8 +156,37 @@ class SailDroneGUI:
 
         plt.show()
 
+    def draw_wind_indicator(self):
+        """Draw the wind direction indicator in a separate axes."""
+        self.ax_wind.clear()
+        self.ax_wind.set_xlim(-1, 1)
+        self.ax_wind.set_ylim(-1, 1)
+        self.ax_wind.set_aspect('equal')
+        self.ax_wind.axis('off')
+        
+        wind_magnitude = np.linalg.norm(self.wind)
+        if wind_magnitude > 0:
+            # Normalize wind vector
+            wind_norm_x = self.wind[0] / wind_magnitude
+            wind_norm_y = self.wind[1] / wind_magnitude
+            
+            # Scale arrow to fit nicely in the box
+            arrow_scale = 0.7
+            
+            self.ax_wind.arrow(0, 0, wind_norm_x * arrow_scale, wind_norm_y * arrow_scale,
+                             head_width=0.25, head_length=0.2,
+                             fc='cyan', ec='blue', linewidth=3, zorder=10)
+            
+            self.ax_wind.text(0, -0.9, f'Wind: ({self.wind[0]:.1f}, {self.wind[1]:.1f}) m/s',
+                            fontsize=10, color='blue', ha='center', weight='bold')
+            self.ax_wind.text(0, 0.9, 'Wind Direction',
+                            fontsize=11, color='blue', ha='center', weight='bold')
+        else:
+            self.ax_wind.text(0, 0, 'No Wind',
+                            fontsize=11, color='gray', ha='center', weight='bold')
+
     def draw_initial_state(self):
-        """Draw the boat and wind on the canvas."""
+        """Draw the boat on the canvas."""
         # Draw boat initial position and orientation
         boat_x, boat_y = self.s0[0, 0], self.s0[1, 0]
         boat_heading = self.s0[2, 0]
@@ -163,31 +200,6 @@ class SailDroneGUI:
                      head_width=15, head_length=20,
                      fc='green', ec='darkgreen', linewidth=2,
                      label='Boat Start', zorder=10)
-
-        # Draw wind direction
-        wind_magnitude = np.linalg.norm(self.wind)
-        if wind_magnitude > 0:
-            x_min, x_max = self.ax.get_xlim()
-            y_min, y_max = self.ax.get_ylim()
-            x_range = x_max - x_min
-            y_range = y_max - y_min
-
-            wind_x = x_max - 0.15 * x_range
-            wind_y = y_min + 0.15 * y_range
-            wind_arrow_length = 0.08 * max(x_range, y_range)
-
-            wind_dx = wind_arrow_length * self.wind[0] / wind_magnitude
-            wind_dy = wind_arrow_length * self.wind[1] / wind_magnitude
-
-            self.ax.arrow(wind_x, wind_y, wind_dx, wind_dy,
-                         head_width=wind_arrow_length*0.3,
-                         head_length=wind_arrow_length*0.25,
-                         fc='cyan', ec='blue', linewidth=3,
-                         label='Wind Direction', zorder=10)
-
-            self.ax.text(wind_x, wind_y - 0.05 * y_range,
-                        f'Wind: ({self.wind[0]:.1f}, {self.wind[1]:.1f}) m/s',
-                        fontsize=11, color='blue', ha='center', weight='bold')
 
         self.ax.legend(fontsize=10, loc='upper left')
 
@@ -244,8 +256,9 @@ class SailDroneGUI:
         # Right click or middle click: start panning
         elif event.button in [2, 3]:  # Middle or right mouse button
             self.is_panning = True
-            self.pan_start_x = event.xdata
-            self.pan_start_y = event.ydata
+            # Store pixel coordinates instead of data coordinates
+            self.pan_start_x = event.x
+            self.pan_start_y = event.y
             self.pan_start_xlim = (self.x_min, self.x_max)
             self.pan_start_ylim = (self.y_min, self.y_max)
             # Change cursor to indicate panning mode
@@ -271,24 +284,39 @@ class SailDroneGUI:
         if not self.is_panning:
             return
 
-        if event.inaxes != self.ax:
+        # Allow panning even if mouse leaves the axes temporarily
+        if event.x is None or event.y is None:
             return
 
-        if event.xdata is None or event.ydata is None:
-            return
+        # Calculate pixel displacement
+        dx_pixels = event.x - self.pan_start_x
+        dy_pixels = event.y - self.pan_start_y
 
-        # Calculate how much to pan
-        dx = self.pan_start_x - event.xdata
-        dy = self.pan_start_y - event.ydata
+        # Convert pixel displacement to data coordinates
+        x_range = self.pan_start_xlim[1] - self.pan_start_xlim[0]
+        y_range = self.pan_start_ylim[1] - self.pan_start_ylim[0]
+        
+        # Get the axes size in pixels
+        bbox = self.ax.get_window_extent()
+        width_pixels = bbox.width
+        height_pixels = bbox.height
+        
+        # Convert to data units
+        dx_data = -dx_pixels * x_range / width_pixels
+        dy_data = -dy_pixels * y_range / height_pixels
 
         # Update axis limits
-        self.x_min = self.pan_start_xlim[0] + dx
-        self.x_max = self.pan_start_xlim[1] + dx
-        self.y_min = self.pan_start_ylim[0] + dy
-        self.y_max = self.pan_start_ylim[1] + dy
+        self.x_min = self.pan_start_xlim[0] + dx_data
+        self.x_max = self.pan_start_xlim[1] + dx_data
+        self.y_min = self.pan_start_ylim[0] + dy_data
+        self.y_max = self.pan_start_ylim[1] + dy_data
 
-        # Redraw canvas
-        self.update_canvas()
+        # Update only the axis limits without redrawing everything
+        self.ax.set_xlim(self.x_min, self.x_max)
+        self.ax.set_ylim(self.y_min, self.y_max)
+        
+        # Use draw_idle for efficient redrawing
+        self.fig.canvas.draw_idle()
 
     def on_scroll(self, event):
         """Handle scroll event for zooming."""
@@ -388,6 +416,7 @@ class SailDroneGUI:
             self.wind = np.array([wind_x, wind_y])
 
             print(f"Wind updated to: ({wind_x}, {wind_y}) m/s")
+            self.draw_wind_indicator()
             self.update_canvas()
         except ValueError:
             print("Invalid wind values")
